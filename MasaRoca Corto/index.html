@@ -1,0 +1,1388 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor de Mapa Mental</title>
+    <!-- Incluir la librería Tailwind CSS para un diseño moderno y responsive -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Incluir la librería D3.js para la visualización del árbol -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        body.dark {
+            background-color: #1f2937;
+            color: #f3f4f6;
+        }
+        .node-rect {
+            cursor: pointer;
+            stroke-width: 1.5px;
+            fill: #f3f4f6;
+            stroke: #9ca3af;
+            rx: 8px; /* Radio de los bordes redondeados */
+            ry: 8px;
+        }
+        body.dark .node-rect {
+            fill: #374151;
+            stroke: #4b5563;
+        }
+        .node-text {
+            font-size: 14px;
+            font-weight: 500;
+            fill: #1f2937;
+            pointer-events: none;
+        }
+        body.dark .node-text {
+            fill: #f3f4f6;
+        }
+        .node-icon {
+            fill: #6b7280;
+        }
+        body.dark .node-icon {
+            fill: #d1d5db;
+        }
+        .link {
+            fill: none;
+            stroke: #6b7280;
+            stroke-width: 2px;
+        }
+        body.dark .link {
+            stroke: #9ca3af;
+        }
+        .expand-collapse-button {
+            cursor: pointer;
+        }
+        .expand-collapse-button text {
+            font-size: 10px;
+            font-weight: 600;
+            fill: #1f2937;
+            pointer-events: none;
+        }
+        body.dark .expand-collapse-button text {
+            fill: #f3f4f6;
+        }
+        .expand-collapse-button circle {
+            fill: #f3f4f6;
+            stroke-width: 1.5px;
+        }
+        body.dark .expand-collapse-button circle {
+            fill: #374151;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark flex flex-col h-screen">
+
+    <header class="bg-white dark:bg-gray-800 shadow p-4 flex items-center justify-between flex-wrap">
+        <h1 id="app-title" class="text-xl font-bold text-gray-800 dark:text-gray-100">Visor de Mapa Mental</h1>
+        <div class="flex items-center space-x-4 mt-2 sm:mt-0">
+            <div class="relative">
+                <select id="language-selector" class="bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg shadow-md cursor-pointer">
+                    <option value="es">Español</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+            <button id="toggle-dark-mode" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors duration-200 shadow-md">
+                Modo Claro
+            </button>
+            <button id="fit-to-tree-button" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors duration-200 shadow-md">
+                Ajustar al Árbol
+            </button>
+            <button id="collapse-all-button" class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition-colors duration-200 shadow-md">
+                Colapsar Todo
+            </button>
+            <button id="expand-next-level-button" class="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 transition-colors duration-200 shadow-md">
+                Expandir Nivel
+            </button>
+            <!-- Dropdown para guardar -->
+            <div class="relative inline-block text-left">
+                <button id="save-dropdown-button" class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200">
+                    Guardar
+                </button>
+                <div id="save-dropdown-menu" class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white dark:bg-gray-700 ring-1 ring-black ring-opacity-5 hidden z-50">
+                    <div class="py-1" role="menu" aria-orientation="vertical" aria-labelledby="save-dropdown-button">
+                        <a href="#" id="save-svg" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">SVG</a>
+                        <a href="#" id="save-png" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">PNG</a>
+                        <a href="#" id="save-json" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">JSON</a>
+                        <a href="#" id="save-mm" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">FreeMind (.mm)</a>
+                        <a href="#" id="save-opml" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">OPML (.opml)</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow relative overflow-hidden">
+        <div id="mindmap-container" class="w-full h-full flex items-center justify-center">
+            <svg id="mindmap-svg" class="w-full h-full"></svg>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.0/html-to-image.min.js"></script>
+    <script>
+        // Data del mapa mental incrustada directamente
+        const mindMapData = {
+  "name": "Tecnología MasaRoca",
+  "children": [
+    {
+      "name": "¿Qué es MasaRoca?",
+      "children": [
+        {
+          "name": "Descripción General",
+          "children": [
+            {
+              "name": "Supermateriales",
+              "children": [
+                {
+                  "name": "Microconcretos tipo grouts cementicios"
+                },
+                {
+                  "name": "Altas resistencias estructurales y químicas"
+                },
+                {
+                  "name": "Modificado con polímeros de alto desempeño (PCE)"
+                }
+              ]
+            },
+            {
+              "name": "Consistencia",
+              "children": [
+                {
+                  "name": "Masa tipo barro para modelar"
+                },
+                {
+                  "name": "No escurre (sin revenimiento)"
+                }
+              ]
+            },
+            {
+              "name": "Fraguado",
+              "children": [
+                {
+                  "name": "Sin contracción ni expansión"
+                },
+                {
+                  "name": "Fraguado en presencia de agua (hidráulico)"
+                }
+              ]
+            },
+            {
+              "name": "Adherencia",
+              "children": [
+                {
+                  "name": "Máxima adherencia a múltiples sustratos"
+                },
+                {
+                  "name": "Cohesión al sustrato, no a la herramienta"
+                }
+              ]
+            },
+            {
+              "name": "Durabilidad",
+              "children": [
+                {
+                  "name": "Más resistente que el granito"
+                },
+                {
+                  "name": "Incrementa resistencia con el tiempo y presencia de agua"
+                }
+              ]
+            },
+            {
+              "name": "Seguridad",
+              "children": [
+                {
+                  "name": "No tóxico, seguro y ecológico"
+                },
+                {
+                  "name": "No inflamable"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Principios de Tecnología",
+          "children": [
+            {
+              "name": "Uso de supermateriales pétreos"
+            },
+            {
+              "name": "Mayor calidad de materiales, menores requerimientos"
+            },
+            {
+              "name": "Ahorro en procesos, tiempos y costos"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Productos",
+      "children": [
+        {
+          "name": "MasaRoca Rescate Estructural TG3",
+          "children": [
+            {
+              "name": "Descripción",
+              "children": [
+                {
+                  "name": "Microconcreto estructural"
+                },
+                {
+                  "name": "Altas resistencias mecánicas y químicas"
+                },
+                {
+                  "name": "Sin contracciones e impermeable"
+                }
+              ]
+            },
+            {
+              "name": "Presentación",
+              "children": [
+                {
+                  "name": "Saco de 25 Kg"
+                },
+                {
+                  "name": "Color: Gris"
+                }
+              ]
+            },
+            {
+              "name": "Preparación",
+              "children": [
+                {
+                  "name": "190 ml de agua por kg de MasaRoca"
+                },
+                {
+                  "name": "Consistencia de plastilina"
+                },
+                {
+                  "name": "Dejar reposar 1 minuto"
+                }
+              ]
+            },
+            {
+              "name": "Rendimiento",
+              "children": [
+                {
+                  "name": "15 kg/m2 (capa de 9 mm)"
+                }
+              ]
+            },
+            {
+              "name": "Resistencias a Compresión",
+              "children": [
+                {
+                  "name": "24 hrs: 250kg/cm²"
+                },
+                {
+                  "name": "28 días: 600kg/cm²"
+                },
+                {
+                  "name": "Microconcreto de última generación"
+                },
+                {
+                  "name": "Mayor velocidad de fraguado"
+                },
+                {
+                  "name": "Color: Hueso"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "MasaRoca Express EX",
+          "children": [
+            {
+              "name": "Tiempo de Fraguado",
+              "children": [
+                {
+                  "name": "3 horas"
+                },
+                {
+                  "name": "4.125 L de agua por saco de 25kg (165 ml/kg)"
+                },
+                {
+                  "name": "Consistencia de masa"
+                },
+                {
+                  "name": "Puede adicionarse agregado grueso (hasta 1:3)"
+                },
+                {
+                  "name": "14.7 L de mezcla por saco"
+                },
+                {
+                  "name": "Aumenta hasta 300% con agregados"
+                },
+                {
+                  "name": "3 hrs: 250 kg/cm² (4 horas: 290 kg/cm²)"
+                },
+                {
+                  "name": "28 días: 740 kg/cm² (600 kg/cm²)"
+                }
+              ]
+            },
+            {
+              "name": "Resistencia al Fuego",
+              "children": [
+                {
+                  "name": "8 horas a 700 °C"
+                },
+                {
+                  "name": "Impermeabilizante a base de Microconcretos estructurales"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "MasaRoca Composite Impermeabilizante PCE",
+          "children": [
+            {
+              "name": "Usos",
+              "children": [
+                {
+                  "name": "Impermeabilización y recubrimiento de concreto endurecido"
+                },
+                {
+                  "name": "Aislar y recubrir techos de lámina galvanizada"
+                },
+                {
+                  "name": "Modificado con polímeros de alto desempeño"
+                },
+                {
+                  "name": "Saco de 50 Kgs."
+                },
+                {
+                  "name": "Color: Blanco"
+                }
+              ]
+            },
+            {
+              "name": "Características",
+              "children": [
+                {
+                  "name": "Refleja radiación lumínica y térmica"
+                },
+                {
+                  "name": "Capa impermeable de alta resistencia"
+                },
+                {
+                  "name": "Permeable al vapor de agua"
+                },
+                {
+                  "name": "Capa 1: 13.5 a 14 L de agua por saco"
+                },
+                {
+                  "name": "Capa 2: 13 a 13.5 L de agua por saco"
+                },
+                {
+                  "name": "Dejar reposar 3 minutos"
+                }
+              ]
+            },
+            {
+              "name": "Permeabilidad",
+              "children": [
+                {
+                  "name": "10-14 m/segundo"
+                },
+                {
+                  "name": "13 a 16.5 m² por saco (3.0 a 4.0 kg/m² en 2 capas)"
+                },
+                {
+                  "name": "28 días: 345-446 kg/cm2"
+                },
+                {
+                  "name": "Microconcreto estructural de fraguado ultrarrápido"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "MasaRoca Súper Bacheo",
+          "children": [
+            {
+              "name": "Ventajas",
+              "children": [
+                {
+                  "name": "Tiempo de fraguado 3 horas"
+                },
+                {
+                  "name": "Nulo revenimiento"
+                },
+                {
+                  "name": "Memoria dimensional"
+                },
+                {
+                  "name": "No requiere adherentes ni herramientas complejas"
+                },
+                {
+                  "name": "3 horas: 450 kg/cm²"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Express Minería"
+        }
+      ]
+    },
+    {
+      "name": "Propiedades",
+      "children": [
+        {
+          "name": "Estado Fresco",
+          "children": [
+            {
+              "name": "Facilidad de preparación (solo añadir agua)"
+            },
+            {
+              "name": "Consistencia de masa única (sin revenimiento)"
+            },
+            {
+              "name": "Memoria dimensional en fresco"
+            },
+            {
+              "name": "No requiere o reduce uso de cimbra"
+            },
+            {
+              "name": "Gran cohesión y adhesividad al sustrato"
+            },
+            {
+              "name": "No tóxico, seguro"
+            },
+            {
+              "name": "Facilidad de aplicación y sin desperdicio"
+            },
+            {
+              "name": "No escurre"
+            },
+            {
+              "name": "No requiere mano de obra o herramientas especializadas"
+            },
+            {
+              "name": "Hidráulico (fragua en presencia de agua)"
+            },
+            {
+              "name": "Reduce procesos y simplifica el trabajo"
+            },
+            {
+              "name": "Velocidad de aplicación"
+            },
+            {
+              "name": "Permite infinidad de terminados"
+            },
+            {
+              "name": "Limpio y sin desperdicio"
+            }
+          ]
+        },
+        {
+          "name": "Estado Endurecido",
+          "children": [
+            {
+              "name": "Altas resistencias estructurales (compresión, flexión, tensión, adherencia)"
+            },
+            {
+              "name": "Totalmente impermeable (10^-14 Darcy)"
+            },
+            {
+              "name": "Sin contracción ni expansión (0.0%)"
+            },
+            {
+              "name": "No se intemperiza"
+            },
+            {
+              "name": "Resiste al fuego (8 horas a 700°C)"
+            },
+            {
+              "name": "Libre de mantenimiento"
+            },
+            {
+              "name": "Curva de esfuerzo-deformación (sin colapso súbito)"
+            },
+            {
+              "name": "Sin juntas constructivas, monolítico"
+            },
+            {
+              "name": "Máximas resistencias a agentes externos y contaminantes"
+            },
+            {
+              "name": "Protección contra migración de sales"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Aplicaciones",
+      "children": [
+        {
+          "name": "Reparación y Refuerzo Estructural",
+          "children": [
+            {
+              "name": "Rehabilitación y restauración de estructuras de concreto"
+            },
+            {
+              "name": "Relleno de oquedades en estructuras"
+            },
+            {
+              "name": "Sellado de grietas mayores a 5mm"
+            },
+            {
+              "name": "Recubrimientos de concreto con varilla expuesta"
+            },
+            {
+              "name": "Rescate de estructuras dañadas por sismo, corrosión, intemperie"
+            },
+            {
+              "name": "Anclajes"
+            },
+            {
+              "name": "Ferrocemento"
+            },
+            {
+              "name": "Recubrimientos estructurales con o sin acero de refuerzo"
+            }
+          ]
+        },
+        {
+          "name": "Impermeabilización y Sellado",
+          "children": [
+            {
+              "name": "Impermeabilización de losas, muros y techos"
+            },
+            {
+              "name": "Sellado de grietas"
+            },
+            {
+              "name": "Sellado de piletas y cisternas"
+            },
+            {
+              "name": "Contención, conducción y almacenamiento de líquidos (químicos, desechos, agua)"
+            },
+            {
+              "name": "Aplicaciones en bajo nivel freático (túneles)"
+            },
+            {
+              "name": "Sellado de registros bajo nivel freático"
+            }
+          ]
+        },
+        {
+          "name": "Vialidades y Pisos Industriales",
+          "children": [
+            {
+              "name": "Reparación de vialidades de concreto, baches y grietas"
+            },
+            {
+              "name": "Nivelación de brocales y desagües"
+            },
+            {
+              "name": "Elaboración de tapas de registro"
+            },
+            {
+              "name": "Pistas de aterrizaje, andenes de concreto"
+            },
+            {
+              "name": "Losas y sobrelosas de concreto para uso rudo y tráfico pesado"
+            }
+          ]
+        },
+        {
+          "name": "Construcción General",
+          "children": [
+            {
+              "name": "Construcción de estructuras de cualquier tipo y tamaño sin cimbra"
+            },
+            {
+              "name": "Construcciones ultra ligeras y ultra resistentes"
+            },
+            {
+              "name": "Recubrimientos impermeables para concreto, acero y otros"
+            },
+            {
+              "name": "Aplicación en formas caprichosas, ángulos inclinados, domos"
+            },
+            {
+              "name": "Construcción de puentes, ciclopistas, lagos artificiales"
+            },
+            {
+              "name": "Programas sociales (vivienda, ollas de captación, tanques para piscicultura)"
+            }
+          ]
+        },
+        {
+          "name": "Casos de Éxito",
+          "children": [
+            {
+              "name": "Puente de Nonoalco, CDMX"
+            },
+            {
+              "name": "Muelle en Manzanillo"
+            },
+            {
+              "name": "Rescate de Muelles de Pajaritos, Ver. (1997/1999)"
+            },
+            {
+              "name": "Recubrimiento y rescate de losas en PEMEX Tabasco"
+            },
+            {
+              "name": "Reparación de cisternas San Luis Potosí"
+            },
+            {
+              "name": "Reparación de “dados”"
+            },
+            {
+              "name": "Reparación de daños y recubrimiento impermeable en hospital IMSS"
+            },
+            {
+              "name": "Rescate de edificio dañado por sismo 2017 (CDMX)"
+            },
+            {
+              "name": "Rescate de camaroneras Islas Marías"
+            },
+            {
+              "name": "Rescate de puente colapsado (Puente de San Marcos, Xico, Ver.)"
+            },
+            {
+              "name": "Rescate de tanque elevado Grupo Chedraui"
+            },
+            {
+              "name": "Reparación de trincheras en industria petroquímica"
+            },
+            {
+              "name": "Restauración e impermeabilización monolítica en centro comercial"
+            },
+            {
+              "name": "Recubrimiento impermeable en edificios (HOMEX)"
+            },
+            {
+              "name": "Reparación estructural en túnel"
+            },
+            {
+              "name": "Construcción de talud, Hidalgo"
+            },
+            {
+              "name": "Metrobus Coyuya (reparación de superficie de rodamiento)"
+            },
+            {
+              "name": "Puente Av. Jalisco y Observatorio (CDMX)"
+            },
+            {
+              "name": "Recubrimiento impermeable en muro de hospital (IMSS)"
+            },
+            {
+              "name": "Rescate de olla de captación de agua en Morelos"
+            },
+            {
+              "name": "Complejo penitenciario Islas Marías"
+            },
+            {
+              "name": "Canal de desagüe de ácidos en industria petroquímica"
+            },
+            {
+              "name": "Aplicación de MasaRoca lanzada en mina en Guanajuato"
+            },
+            {
+              "name": "Muro de contención en Hidalgo"
+            },
+            {
+              "name": "Impermeabilización de cisternas de Grupo Chedraui"
+            },
+            {
+              "name": "Lago artificial, Pachuca"
+            },
+            {
+              "name": "Parque de la Niñez, Pue."
+            },
+            {
+              "name": "Pista de patinaje, Parque Flor del Bosque, Pue."
+            },
+            {
+              "name": "Escultura lúdica, Parque Flor del Bosque, Pue."
+            }
+          ]
+        },
+        {
+          "name": "Artes Plásticas",
+          "children": [
+            {
+              "name": "Esculturas, artesanías"
+            },
+            {
+              "name": "Restauración de monumentos y edificios históricos"
+            },
+            {
+              "name": "Rescate de esculturas del Banco de México"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Modo de Empleo General",
+      "children": [
+        {
+          "name": "Preparación de la Superficie",
+          "children": [
+            {
+              "name": "Limpiar y lavar (libre de polvo, aceites, desmoldantes)"
+            },
+            {
+              "name": "Inspección de daños (agrietamientos, oquedades, varilla expuesta)"
+            },
+            {
+              "name": "Escarificar o picar (para concreto pulido)"
+            },
+            {
+              "name": "Humedecer generosamente (sin charcos, 24h previas)"
+            }
+          ]
+        },
+        {
+          "name": "Preparación del Material",
+          "children": [
+            {
+              "name": "Mezclar con agua limpia en recipiente limpio"
+            },
+            {
+              "name": "Asegurar consistencia homogénea, sin grumos"
+            },
+            {
+              "name": "Dejar reposar (1-3 minutos, luego volver a mezclar)"
+            }
+          ]
+        },
+        {
+          "name": "Aplicación",
+          "children": [
+            {
+              "name": "Rellenar oquedades y grietas (con cemento plástico o MasaRoca)"
+            },
+            {
+              "name": "Aplicar con llana, cepillo de ixtle, escoba de cerdas suaves"
+            },
+            {
+              "name": "Garantizar espesor mínimo"
+            },
+            {
+              "name": "Cubrir completamente la superficie (losas, chaflanes, pretiles, ductos)"
+            },
+            {
+              "name": "Aplicar en capas (transversal y sentido de la pendiente)"
+            },
+            {
+              "name": "Dejar secar entre capas (1-2 horas)"
+            },
+            {
+              "name": "Humedecer ligeramente la capa previa"
+            },
+            {
+              "name": "Puede aplicarse en una sola capa con llana para afinar"
+            },
+            {
+              "name": "Cubrir muros y ductos 5 cms por arriba del nivel de la losa"
+            },
+            {
+              "name": "Generar chaflanes en bases de tuberías"
+            },
+            {
+              "name": "Instalar mallas de refuerzo (gallinero, falso plafón, metal desplegado)"
+            }
+          ]
+        },
+        {
+          "name": "Curado",
+          "children": [
+            {
+              "name": "Mojar el material aplicado 24 horas después"
+            },
+            {
+              "name": "Repetir 3 veces al día por una semana (MasaRoca Composite)"
+            },
+            {
+              "name": "Aplicar abundante agua durante 5 días (MasaRoca Súper Bacheo)"
+            },
+            {
+              "name": "Humedecer regularmente por 3 días (MasaRoca Express)"
+            }
+          ]
+        },
+        {
+          "name": "Precauciones",
+          "children": [
+            {
+              "name": "No aplicar debajo de 4°C (MasaRoca Composite, Rescate Estructural)"
+            },
+            {
+              "name": "No aplicar debajo de 2°C (MasaRoca Express)"
+            },
+            {
+              "name": "No agregar más agua después del mezclado"
+            }
+          ]
+        },
+        {
+          "name": "Medidas de Seguridad",
+          "children": [
+            {
+              "name": "Usar mascarilla contra polvo, guantes de goma, gafas"
+            },
+            {
+              "name": "Lavar inmediatamente con agua limpia si entra en contacto con los ojos"
+            }
+          ]
+        },
+        {
+          "name": "Almacenamiento",
+          "children": [
+            {
+              "name": "6 meses en empaque original, cerrado, lugar seco y bajo techo (MasaRoca Composite)"
+            },
+            {
+              "name": "Hasta 5 años en empaque original, cerrado, lugar seco y sobre tarima (MasaRoca Express)"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+};
+
+        // Variables globales para D3
+        let treeLayout, root, svg, g, zoom, messageBox;
+        const branchColors = ['#2563eb', '#059669', '#dc2626', '#9333ea', '#ca8a04', '#1d4ed8'];
+        let isDarkMode = true;
+        let currentLanguage = 'es';
+        const NODE_LIMIT_FOR_TRANSITION = 100;
+        
+        // Objeto de traducciones
+        const translations = {
+            'app-title': { es: 'Visor de Mapa Mental', en: 'Mind Map Viewer' },
+            'toggle-dark-mode': { es: 'Modo Claro', en: 'Light Mode', darkEs: 'Modo Oscuro', darkEn: 'Dark Mode' },
+            'fit-to-tree-button': { es: 'Ajustar al Árbol', en: 'Fit to Tree' },
+            'collapse-all-button': { es: 'Colapsar Todo', en: 'Collapse All' },
+            'expand-next-level-button': { es: 'Expandir Nivel', en: 'Expand Level' },
+            'save-dropdown-button': { es: 'Guardar', en: 'Save' },
+        };
+        
+        // Función para actualizar todos los textos de la interfaz
+        function updateLanguage(lang) {
+            currentLanguage = lang;
+            document.getElementById('app-title').innerText = translations['app-title'][lang];
+            updateDarkModeButtonText();
+            document.getElementById('fit-to-tree-button').innerText = translations['fit-to-tree-button'][lang];
+            document.getElementById('collapse-all-button').innerText = translations['collapse-all-button'][lang];
+            document.getElementById('expand-next-level-button').innerText = translations['expand-next-level-button'][lang];
+            document.getElementById('save-dropdown-button').innerText = translations['save-dropdown-button'][lang];
+        }
+
+        // Función para actualizar el texto del botón de modo oscuro
+        function updateDarkModeButtonText() {
+            const button = document.getElementById('toggle-dark-mode');
+            if (isDarkMode) {
+                button.innerText = translations['toggle-dark-mode']['dark' + (currentLanguage === 'es' ? 'Es' : 'En')];
+            } else {
+                button.innerText = translations['toggle-dark-mode'][currentLanguage];
+            }
+        }
+
+        // Inicializar D3
+        function initializeD3() {
+            d3.select("#mindmap-svg").html("");
+            svg = d3.select("#mindmap-svg");
+            
+            g = svg.append("g");
+
+            // Aumentar el tamaño del nodo para un mejor espaciado
+            treeLayout = d3.tree().nodeSize([80, 450]);
+
+            // Se define el comportamiento de zoom para la capa 'g'
+            zoom = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+            svg.call(zoom);
+        }
+
+        document.getElementById('fit-to-tree-button').addEventListener('click', fitToTree);
+        
+        document.getElementById('collapse-all-button').addEventListener('click', () => {
+            collapseAll();
+            fitToTree();
+        });
+
+        document.getElementById('expand-next-level-button').addEventListener('click', expandNextLevel);
+
+        // Toggle para el modo oscuro
+        document.getElementById('toggle-dark-mode').addEventListener('click', () => {
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('dark', isDarkMode);
+            updateDarkModeButtonText();
+            if (root) update(root);
+        });
+
+        // Event listener para el selector de idioma
+        document.getElementById('language-selector').addEventListener('change', (event) => {
+            updateLanguage(event.target.value);
+        });
+        
+        // Lógica de carga del mapa mental
+        function loadMindMap() {
+            const assignIds = (node, parentId = null) => {
+                node.id = `${parentId ? parentId + '_' : ''}${crypto.randomUUID()}`;
+                if (node.children) {
+                    node.children.forEach(child => assignIds(child, node.id));
+                }
+            };
+            assignIds(mindMapData);
+            
+            root = d3.hierarchy(mindMapData, d => d.children);
+            root.x0 = window.innerHeight / 2;
+            root.y0 = 0;
+
+            // Colapsar y colorear las ramas del nodo raíz
+            if (root.children) {
+                root.children.forEach((child, index) => {
+                    collapseAndColor(child, branchColors[index % branchColors.length]);
+                });
+            }
+            
+            update(root);
+            
+            // Llama a la función para ajustar la vista al árbol completo
+            fitToTree();
+        }
+
+        // Función para colapsar y asignar colores a los nodos
+        function collapseAndColor(d, parentColor) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+                d.color = d3.rgb(parentColor).brighter(d.depth * 0.5);
+                d._children.forEach(c => collapseAndColor(c, parentColor));
+            } else {
+                d.color = d3.rgb(parentColor).brighter(d.depth * 0.5);
+            }
+        }
+
+        // Función para envolver el texto en múltiples líneas
+        function wrapText(textSelection, maxWidth) {
+            const padding = 20;
+            const lineHeight = 1.2;
+            const fontSize = 14; 
+            
+            textSelection.each(function(d) {
+                const text = d3.select(this);
+                text.text(null).attr("text-anchor", "middle");
+
+                const words = d.data.name.split(/\s+/).reverse();
+                let word, line = [], lineCount = 0, tspan;
+
+                tspan = text.append("tspan").attr("x", 0).text("");
+
+                let maxLineWidth = 0;
+                while (word = words.pop()) {
+                    line.push(word);
+                    tspan.text(line.join(" "));
+                    
+                    const currentWidth = tspan.node().getComputedTextLength();
+                    maxLineWidth = Math.max(maxLineWidth, currentWidth);
+                    
+                    if (currentWidth > maxWidth - padding * 2) {
+                        line.pop();
+                        tspan.text(line.join(" "));
+                        maxLineWidth = Math.max(maxLineWidth, tspan.node().getComputedTextLength());
+                        line = [word];
+                        lineCount++;
+                        tspan = text.append("tspan").attr("x", 0).attr("dy", lineHeight + "em").text(word);
+                    }
+                }
+                
+                const totalLines = lineCount + 1;
+                const firstLineDy = -(totalLines - 1) / 2 * lineHeight + 0.35 + "em";
+                
+                text.selectAll("tspan").each(function(d, i) {
+                    if (i === 0) {
+                        d3.select(this).attr("dy", firstLineDy);
+                    } else {
+                        d3.select(this).attr("dy", lineHeight + "em");
+                    }
+                });
+                
+                const totalHeight = totalLines * lineHeight * fontSize + padding;
+                const totalWidth = Math.min(maxWidth, maxLineWidth + padding * 2);
+
+                d.data.height = totalHeight;
+                d.data.width = totalWidth;
+            });
+        }
+
+        // Función para actualizar la visualización del árbol
+        function update(source) {
+            // Performance optimization: dynamically set transition duration based on node count
+            const transitionDuration = root.descendants().length > NODE_LIMIT_FOR_TRANSITION ? 0 : 100;
+            const treeData = treeLayout(root);
+            const nodes = treeData.descendants();
+            const links = treeData.descendants().slice(1);
+
+            const node = g.selectAll('g.node').data(nodes, d => d.id);
+
+            const nodeEnter = node.enter().append('g')
+                .attr('class', 'node')
+                .attr("transform", d => `translate(${source.y0},${source.x0})`);
+
+            // Añadir manejador de clic para el nodo completo
+            nodeEnter.on('click', (event, d) => {
+                if (d.children || d._children) {
+                    event.stopPropagation();
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    } else {
+                        d.children = d._children;
+                        d._children = null;
+                    }
+                    update(d);
+                }
+            });
+
+            // Añadir rectángulo y texto para los nodos entrantes
+            nodeEnter.append('rect')
+                .attr('class', 'node-rect')
+                .attr('width', 1e-6)
+                .attr('height', 1e-6)
+                .style('fill', d => d._children ? d.color : (isDarkMode ? '#374151' : '#fff'))
+                .style('stroke', d => d.color);
+
+            nodeEnter.append('text')
+                .attr("class", "node-text")
+                .text(d => d.data.name);
+
+            // Añadir el grupo para el botón de expandir/colapsar
+            const buttonGroup = nodeEnter.append('g')
+                .attr('class', 'expand-collapse-button')
+                .on('click', (event, d) => { // Re-agregar el manejador de clic aquí
+                    if (d.children || d._children) {
+                        event.stopPropagation();
+                        if (d.children) {
+                            d._children = d.children;
+                            d.children = null;
+                        } else {
+                            d.children = d._children;
+                            d._children = null;
+                        }
+                        update(d);
+                    }
+                });
+
+            buttonGroup.append('circle')
+                .attr('r', 12)
+                .attr('cy', 0);
+
+            buttonGroup.append('text')
+                .attr('dy', '0.35em')
+                .attr('text-anchor', 'middle')
+                .style('font-size', '10px');
+
+            const nodeUpdate = nodeEnter.merge(node);
+            
+            // Envolver el texto para calcular las dimensiones del nodo
+            nodeUpdate.select('text.node-text').call(wrapText, 250);
+
+            nodeUpdate.transition().duration(transitionDuration)
+                .attr("transform", d => `translate(${d.y},${d.x})`);
+
+            // Aplicar las dimensiones calculadas al rectángulo
+            nodeUpdate.select('rect.node-rect')
+                .attr('x', d => -d.data.width / 2)
+                .attr('width', d => d.data.width)
+                .attr('height', d => d.data.height)
+                .attr('y', d => -d.data.height / 2)
+                .style("fill", d => d._children ? d.color : (isDarkMode ? '#374151' : '#fff'))
+                .style('stroke', d => d.color);
+
+            // Actualizar la posición y el contenido del botón
+            nodeUpdate.select('.expand-collapse-button')
+                .attr('transform', d => `translate(${d.data.width / 2 + 15}, 0)`)
+                .style('opacity', d => (d.children || d._children) ? 1 : 1e-6); 
+
+            nodeUpdate.select('.expand-collapse-button circle')
+                .style('stroke', d => d.color);
+            
+            // Lógica para mostrar el símbolo y el número de hijos
+            nodeUpdate.select('.expand-collapse-button text')
+                .text(d => d.children ? '<' : (d._children ? `>${d._children.length}` : ''));
+
+            const nodeExit = node.exit().transition().duration(transitionDuration)
+                .attr("transform", d => `translate(${source.y},${source.x})`)
+                .remove();
+            
+            nodeExit.select('rect').attr('width', 1e-6).attr('height', 1e-6);
+            nodeExit.select('text').style('fill-opacity', 1e-6);
+
+            // ******************* Enlaces *******************
+            const link = g.selectAll('path.link').data(links, d => d.id);
+
+            const linkEnter = link.enter().insert('path', 'g')
+                .attr('class', 'link')
+                .style('stroke', d => d.color)
+                .attr('d', d => {
+                    const o = { x: source.x0, y: source.y0 };
+                    return `M ${o.y} ${o.x} C ${o.y},${o.x},${o.y},${o.x},${o.y},${o.x}`;
+                });
+
+            link.merge(linkEnter).transition().duration(transitionDuration)
+                .attr('d', d => diagonal(d, d.parent))
+                .style('stroke', d => d.color);
+
+            link.exit().transition().duration(transitionDuration)
+                .attr('d', d => {
+                    const o = { x: source.y, y: source.x };
+                    return `M ${o.y} ${o.x} C ${o.y},${o.x},${o.y},${o.x},${o.y},${o.x}`;
+                })
+                .remove();
+
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+            
+            function diagonal(s, d) {
+                const parentConnectY = d.y + d.data.width / 2 + 15;
+                const childConnectY = s.y - s.data.width / 2;
+                return `M ${parentConnectY} ${d.x}
+                        C ${(parentConnectY + childConnectY) / 2} ${d.x},
+                          ${(parentConnectY + childConnectY) / 2} ${s.x},
+                          ${childConnectY} ${s.x}`;
+            }
+        }
+        
+        // Función para ajustar el árbol a la vista completa
+        function fitToTree() {
+            if (!root) return;
+
+            // Performance optimization for large trees
+            const transitionDuration = root.descendants().length > NODE_LIMIT_FOR_TRANSITION ? 0 : 300;
+
+            const fullWidth = window.innerWidth;
+            const fullHeight = window.innerHeight - 100;
+            const treeData = treeLayout(root);
+            const nodes = treeData.descendants();
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            // Calcular los límites de todos los nodos visibles
+            nodes.forEach(d => {
+                minX = Math.min(minX, d.y - d.data.width / 2);
+                minY = Math.min(minY, d.x - d.data.height / 2);
+                maxX = Math.max(maxX, d.y + d.data.width / 2 + (d.children || d._children ? 20 : 0));
+                maxY = Math.max(maxY, d.x + d.data.height / 2);
+            });
+            
+            const dx = maxX - minX;
+            const dy = maxY - minY;
+            const scale = Math.max(0.2, Math.min(2, 0.9 / Math.max(dx / fullWidth, dy / fullHeight)));
+            
+            const translateX = fullWidth / 2 - (minX + dx / 2) * scale;
+            const translateY = fullHeight / 2 - (minY + dy / 2) * scale;
+            
+            const transform = d3.zoomIdentity.translate(translateX, translateY).scale(scale);
+
+            // Transicionar el SVG para aplicar el nuevo zoom y paneo
+            svg.transition().duration(transitionDuration)
+               .call(zoom.transform, transform);
+        }
+
+        // Función para colapsar todos los nodos (manteniendo el nodo raíz)
+        function collapseAll() {
+            if (!root) return;
+            root.descendants().forEach(d => {
+                if (d.depth > 0) { // No colapsar el nodo raíz
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    }
+                }
+            });
+            update(root);
+        }
+
+        // Función para expandir el siguiente nivel de todas las ramas visibles
+        function expandNextLevel() {
+            if (!root) return;
+            
+            const nodesToExpand = root.descendants().filter(d => d._children && !d.children);
+            
+            nodesToExpand.forEach(d => {
+                d.children = d._children;
+                d._children = null;
+            });
+            
+            update(root);
+            
+            fitToTree();
+        }
+        
+        // --- Funciones de Exportación ---
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function getFullTree(node) {
+            const newNode = { name: node.data.name, id: node.data.id };
+            const allChildren = [];
+
+            if (node.children) {
+                node.children.forEach(child => {
+                    allChildren.push(getFullTree(child));
+                });
+            }
+            if (node._children) {
+                node._children.forEach(child => {
+                    allChildren.push(getFullTree(child));
+                });
+            }
+
+            if (allChildren.length > 0) {
+                newNode.children = allChildren;
+            }
+
+            return newNode;
+        }
+
+        function exportAsSVG(event) {
+            event.preventDefault();
+            const svgElement = document.getElementById('mindmap-svg');
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const fileName = (root && root.data.name ? root.data.name : 'mapa_mental') + '.svg';
+            
+            const style = getComputedStyle(document.body);
+            const cssText = `
+                .node-rect { fill: ${style.getPropertyValue('--tw-bg-gray-100')}; stroke: ${style.getPropertyValue('--tw-bg-gray-100')}; rx: 8px; ry: 8px; }
+                body.dark .node-rect { fill: ${style.getPropertyValue('--tw-bg-gray-800')}; stroke: ${style.getPropertyValue('--tw-bg-gray-800')}; }
+                .node-text { font-size: 14px; font-weight: 500; fill: ${style.getPropertyValue('--tw-bg-gray-800')}; }
+                body.dark .node-text { fill: ${style.getPropertyValue('--tw-bg-gray-100')}; }
+                .link { fill: none; stroke: ${style.getPropertyValue('--tw-bg-gray-800')}; stroke-width: 2px; }
+                body.dark .link { stroke: ${style.getPropertyValue('--tw-bg-gray-100')}; }
+            `;
+            const svgWithStyles = svgData.replace('<svg', `<svg xmlns="http://www.w3.org/2000/svg" style="background-color: ${style.getPropertyValue('--tw-bg-gray-100')};"><style>${cssText}</style>`);
+            
+            downloadFile(svgWithStyles, fileName, 'image/svg+xml');
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsPNG(event) {
+            event.preventDefault();
+            const svgElement = document.getElementById('mindmap-svg');
+            htmlToImage.toPng(svgElement)
+                .then(function (dataUrl) {
+                    const link = document.createElement('a');
+                    link.download = (root && root.data.name ? root.data.name : 'mapa_mental') + '.png';
+                    link.href = dataUrl;
+                    link.click();
+                });
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsJSON(event) {
+            event.preventDefault();
+            if (!root) return;
+            
+            const fullTreeData = getFullTree(root);
+            const jsonData = JSON.stringify(fullTreeData, null, 2);
+            const fileName = (root.data.name || 'mapa_mental') + '.json';
+            downloadFile(jsonData, fileName, 'application/json');
+            
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsFreeMind(event) {
+            event.preventDefault();
+            if (!root) return;
+
+            function buildFreeMindXml(nodeData) {
+                let xml = `<node TEXT="${nodeData.name}"`;
+                const children = nodeData.children;
+                if (children && children.length > 0) {
+                    xml += '>';
+                    children.forEach(child => {
+                        xml += buildFreeMindXml(child);
+                    });
+                    xml += '</node>';
+                } else {
+                    xml += '/>';
+                }
+                return xml;
+            }
+
+            const fullTreeData = getFullTree(root);
+            const xml = `<?xml version="1.0" encoding="UTF-8"?><map version="1.0.1">${buildFreeMindXml(fullTreeData)}</map>`;
+            const fileName = (root.data.name || 'mapa_mental') + '.mm';
+            downloadFile(xml, fileName, 'text/xml');
+            
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsOPML(event) {
+            event.preventDefault();
+            if (!root) return;
+
+            function buildOPML(nodeData) {
+                let xml = `<outline text="${nodeData.name}"`;
+                const children = nodeData.children;
+                if (children && children.length > 0) {
+                    xml += '>';
+                    children.forEach(child => {
+                        xml += buildOPML(child);
+                    });
+                    xml += '</outline>';
+                } else {
+                    xml += '/>';
+                }
+                return xml;
+            }
+
+            const fullTreeData = getFullTree(root);
+            const xml = `<?xml version="1.0"?><opml version="2.0"><body>${buildOPML(fullTreeData)}</body></opml>`;
+            const fileName = (root.data.name || 'mapa_mental') + '.opml';
+            downloadFile(xml, fileName, 'text/xml');
+
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+        
+        window.onload = () => {
+            initializeD3();
+            loadMindMap();
+            updateLanguage('es');
+
+            document.getElementById('save-dropdown-button').addEventListener('click', () => {
+                const menu = document.getElementById('save-dropdown-menu');
+                menu.classList.toggle('hidden');
+            });
+            document.getElementById('save-svg').addEventListener('click', exportAsSVG);
+            document.getElementById('save-png').addEventListener('click', exportAsPNG);
+            document.getElementById('save-json').addEventListener('click', exportAsJSON);
+            document.getElementById('save-mm').addEventListener('click', exportAsFreeMind);
+            document.getElementById('save-opml').addEventListener('click', exportAsOPML);
+        };
+        window.onresize = () => { if (root) update(root); };
+    </script>
+</body>
+</html>
