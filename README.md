@@ -4,3 +4,8 @@
 You can import a visual map as a tree in the following formats: MM, OPML, HTML
 
 You can also export the tree or image to PNG, JSON, MM, OPML, HTML
+
+V1:
+V2:
+
+Example: https://mrpolevka.github.io/MindMap_Visualizer/MasaRoca%20Corto/
