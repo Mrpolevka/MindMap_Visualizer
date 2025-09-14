@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visor de Mapa Mental</title>
+    <!-- Incluir la librería Tailwind CSS para un diseño moderno y responsive -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Incluir la librería D3.js para la visualización del árbol -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overflow: hidden;
+            transition: background-color 0.3s, color 0.3s;
+        }
+        body.dark {
+            background-color: #1f2937;
+            color: #f3f4f6;
+        }
+        .node-rect {
+            cursor: pointer;
+            stroke-width: 1.5px;
+            fill: #f3f4f6;
+            stroke: #9ca3af;
+            rx: 8px; /* Radio de los bordes redondeados */
+            ry: 8px;
+        }
+        body.dark .node-rect {
+            fill: #374151;
+            stroke: #4b5563;
+        }
+        .node-text {
+            font-size: 14px;
+            font-weight: 500;
+            fill: #1f2937;
+            pointer-events: none;
+        }
+        body.dark .node-text {
+            fill: #f3f4f6;
+        }
+        .node-icon {
+            fill: #6b7280;
+        }
+        body.dark .node-icon {
+            fill: #d1d5db;
+        }
+        .link {
+            fill: none;
+            stroke: #6b7280;
+            stroke-width: 2px;
+        }
+        body.dark .link {
+            stroke: #9ca3af;
+        }
+        .expand-collapse-button {
+            cursor: pointer;
+        }
+        .expand-collapse-button text {
+            font-size: 10px;
+            font-weight: 600;
+            fill: #1f2937;
+            pointer-events: none;
+        }
+        body.dark .expand-collapse-button text {
+            fill: #f3f4f6;
+        }
+        .expand-collapse-button circle {
+            fill: #f3f4f6;
+            stroke-width: 1.5px;
+        }
+        body.dark .expand-collapse-button circle {
+            fill: #374151;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark flex flex-col h-screen">
+
+    <header class="bg-white dark:bg-gray-800 shadow p-4 flex items-center justify-between flex-wrap">
+        <h1 id="app-title" class="text-xl font-bold text-gray-800 dark:text-gray-100">Visor de Mapa Mental</h1>
+        <div class="flex items-center space-x-4 mt-2 sm:mt-0">
+            <div class="relative">
+                <select id="language-selector" class="bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg shadow-md cursor-pointer">
+                    <option value="es">Español</option>
+                    <option value="en">English</option>
+                </select>
+            </div>
+            <button id="toggle-dark-mode" class="bg-gray-200 text-gray-800 px-4 py-2 rounded-lg hover:bg-gray-300 transition-colors duration-200 shadow-md">
+                Modo Claro
+            </button>
+            <label for="file-input" id="import-button" class="bg-blue-500 text-white px-4 py-2 rounded-lg cursor-pointer hover:bg-blue-600 transition-colors duration-200 shadow-md">
+                Importar Archivo
+            </label>
+            <input type="file" id="file-input" class="hidden" accept=".mm,.opml,.html">
+            <button id="reset-button" class="bg-red-500 text-white px-4 py-2 rounded-lg hover:bg-red-600 transition-colors duration-200 shadow-md">
+                Limpiar
+            </button>
+            <button id="fit-to-tree-button" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors duration-200 shadow-md">
+                Ajustar al Árbol
+            </button>
+            <button id="collapse-all-button" class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 transition-colors duration-200 shadow-md">
+                Colapsar Todo
+            </button>
+            <button id="expand-next-level-button" class="bg-indigo-500 text-white px-4 py-2 rounded-lg hover:bg-indigo-600 transition-colors duration-200 shadow-md">
+                Expandir Nivel
+            </button>
+            <!-- Dropdown para guardar -->
+            <div class="relative inline-block text-left">
+                <button id="save-dropdown-button" class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 px-4 py-2 rounded-lg shadow-md hover:bg-gray-300 dark:hover:bg-gray-600 transition-colors duration-200">
+                    Guardar
+                </button>
+                <div id="save-dropdown-menu" class="absolute right-0 mt-2 w-48 rounded-md shadow-lg bg-white dark:bg-gray-700 ring-1 ring-black ring-opacity-5 hidden z-50">
+                    <div class="py-1" role="menu" aria-orientation="vertical" aria-labelledby="save-dropdown-button">
+                        <a href="#" id="save-svg" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">SVG</a>
+                        <a href="#" id="save-png" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">PNG</a>
+                        <a href="#" id="save-json" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">JSON</a>
+                        <a href="#" id="save-mm" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">FreeMind (.mm)</a>
+                        <a href="#" id="save-opml" class="block px-4 py-2 text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-600" role="menuitem">OPML (.opml)</a>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <main class="flex-grow relative overflow-hidden">
+        <div id="mindmap-container" class="w-full h-full flex items-center justify-center">
+            <div id="loading-spinner" class="hidden text-center">
+                <div class="animate-spin rounded-full h-16 w-16 border-t-4 border-b-4 border-blue-500"></div>
+                <p id="loading-text" class="mt-4 text-gray-500 dark:text-gray-400">Cargando mapa mental...</p>
+            </div>
+            <svg id="mindmap-svg" class="w-full h-full"></svg>
+            <div id="message-box" class="absolute inset-0 flex items-center justify-center bg-white dark:bg-gray-800 bg-opacity-80 dark:bg-opacity-80 hidden">
+                <div class="bg-white dark:bg-gray-700 p-6 rounded-lg shadow-xl text-center max-w-sm">
+                    <p class="text-gray-700 dark:text-gray-200 text-lg" id="message-text">Selecciona un archivo para visualizar.</p>
+                    <button id="close-message" class="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors">Cerrar</button>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html-to-image/1.11.0/html-to-image.min.js"></script>
+    <script>
+        // Variables globales para D3
+        let treeLayout, root, svg, g, zoom, messageBox;
+        const branchColors = ['#2563eb', '#059669', '#dc2626', '#9333ea', '#ca8a04', '#1d4ed8'];
+        let isDarkMode = true;
+        let currentLanguage = 'es';
+        const NODE_LIMIT_FOR_TRANSITION = 100;
+
+        // Objeto de traducciones
+        const translations = {
+            'app-title': { es: 'Visor de Mapa Mental', en: 'Mind Map Viewer' },
+            'toggle-dark-mode': { es: 'Modo Claro', en: 'Light Mode', darkEs: 'Modo Oscuro', darkEn: 'Dark Mode' },
+            'import-button': { es: 'Importar Archivo', en: 'Import File' },
+            'reset-button': { es: 'Limpiar', en: 'Clear' },
+            'fit-to-tree-button': { es: 'Ajustar al Árbol', en: 'Fit to Tree' },
+            'collapse-all-button': { es: 'Colapsar Todo', en: 'Collapse All' },
+            'expand-next-level-button': { es: 'Expandir Nivel', en: 'Expand Level' },
+            'loading-text': { es: 'Cargando mapa mental...', en: 'Loading mind map...' },
+            'message-text': { es: 'Selecciona un archivo para visualizar.', en: 'Select a file to visualize.' },
+            'error-unsupported-file': { es: 'Tipo de archivo no soportado.', en: 'Unsupported file type.' },
+            'error-parsing-file': { es: 'Error al procesar el archivo o el formato es inválido.', en: 'Error processing file or invalid format.' },
+            'error-file-processing': { es: 'Error al procesar el archivo. Asegúrate de que el formato sea correcto.', en: 'Error processing file. Ensure the format is correct.' },
+            'close-message': { es: 'Cerrar', en: 'Close' },
+            'save-dropdown-button': { es: 'Guardar', en: 'Save' },
+        };
+        
+        // Función para actualizar todos los textos de la interfaz
+        function updateLanguage(lang) {
+            currentLanguage = lang;
+            document.getElementById('app-title').innerText = translations['app-title'][lang];
+            updateDarkModeButtonText();
+            document.getElementById('import-button').innerText = translations['import-button'][lang];
+            document.getElementById('reset-button').innerText = translations['reset-button'][lang];
+            document.getElementById('fit-to-tree-button').innerText = translations['fit-to-tree-button'][lang];
+            document.getElementById('collapse-all-button').innerText = translations['collapse-all-button'][lang];
+            document.getElementById('expand-next-level-button').innerText = translations['expand-next-level-button'][lang];
+            document.getElementById('loading-text').innerText = translations['loading-text'][lang];
+            document.getElementById('message-text').innerText = translations['message-text'][lang];
+            document.getElementById('close-message').innerText = translations['close-message'][lang];
+            document.getElementById('save-dropdown-button').innerText = translations['save-dropdown-button'][lang];
+        }
+
+        // Función para actualizar el texto del botón de modo oscuro
+        function updateDarkModeButtonText() {
+            const button = document.getElementById('toggle-dark-mode');
+            if (isDarkMode) {
+                button.innerText = translations['toggle-dark-mode']['dark' + (currentLanguage === 'es' ? 'Es' : 'En')];
+            } else {
+                button.innerText = translations['toggle-dark-mode'][currentLanguage];
+            }
+        }
+
+        // Inicializar D3
+        function initializeD3() {
+            d3.select("#mindmap-svg").html("");
+            svg = d3.select("#mindmap-svg");
+            
+            g = svg.append("g");
+
+            // Aumentar el tamaño del nodo para un mejor espaciado
+            treeLayout = d3.tree().nodeSize([80, 450]);
+
+            // Se define el comportamiento de zoom para la capa 'g'
+            zoom = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+            svg.call(zoom);
+
+            messageBox = document.getElementById('message-box');
+            messageBox.style.display = 'flex';
+        }
+
+        // Event listeners para los botones del header
+        document.getElementById('file-input').addEventListener('change', handleFileSelect);
+        document.getElementById('reset-button').addEventListener('click', () => {
+            document.getElementById('file-input').value = null;
+            initializeD3();
+            document.getElementById('message-text').innerText = translations['message-text'][currentLanguage];
+        });
+        document.getElementById('close-message').addEventListener('click', () => {
+            messageBox.style.display = 'none';
+        });
+
+        document.getElementById('fit-to-tree-button').addEventListener('click', fitToTree);
+        
+        document.getElementById('collapse-all-button').addEventListener('click', () => {
+            collapseAll();
+            fitToTree();
+        });
+
+        document.getElementById('expand-next-level-button').addEventListener('click', expandNextLevel);
+
+        // Toggle para el modo oscuro
+        document.getElementById('toggle-dark-mode').addEventListener('click', () => {
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('dark', isDarkMode);
+            updateDarkModeButtonText();
+            if (root) update(root);
+        });
+
+        // Event listener para el selector de idioma
+        document.getElementById('language-selector').addEventListener('change', (event) => {
+            updateLanguage(event.target.value);
+        });
+
+        // Manejador principal para la selección de archivos
+        async function handleFileSelect(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            document.getElementById('loading-spinner').classList.remove('hidden');
+            messageBox.style.display = 'none';
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const text = e.target.result;
+                let data = null;
+                const extension = file.name.split('.').pop().toLowerCase();
+
+                try {
+                    switch (extension) {
+                        case 'mm':
+                            data = parseFreeMind(text);
+                            break;
+                        case 'opml':
+                            data = parseOPML(text);
+                            break;
+                        case 'html':
+                            data = parseHTML(text);
+                            break;
+                        default:
+                            showMessage(translations['error-unsupported-file'][currentLanguage]);
+                            return;
+                    }
+
+                    if (data) {
+                        // Asignar IDs únicos a cada nodo
+                        const assignIds = (node, parentId = null) => {
+                            node.id = `${parentId ? parentId + '_' : ''}${crypto.randomUUID()}`;
+                            if (node.children) {
+                                node.children.forEach(child => assignIds(child, node.id));
+                            }
+                        };
+                        assignIds(data);
+                        
+                        root = d3.hierarchy(data, d => d.children);
+                        root.x0 = window.innerHeight / 2;
+                        root.y0 = 0;
+
+                        // Colapsar y colorear las ramas del nodo raíz
+                        if (root.children) {
+                            root.children.forEach((child, index) => {
+                                collapseAndColor(child, branchColors[index % branchColors.length]);
+                            });
+                        }
+                        
+                        update(root);
+                        
+                        document.getElementById('loading-spinner').classList.add('hidden');
+
+                        // Llama a la función para ajustar la vista al árbol completo
+                        fitToTree();
+                    } else {
+                        showMessage(translations['error-parsing-file'][currentLanguage]);
+                    }
+                } catch (error) {
+                    console.error("Error al procesar el archivo:", error);
+                    showMessage(translations['error-file-processing'][currentLanguage]);
+                } finally {
+                    document.getElementById('loading-spinner').classList.add('hidden');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Función para colapsar y asignar colores a los nodos
+        function collapseAndColor(d, parentColor) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+                d.color = d3.rgb(parentColor).brighter(d.depth * 0.5);
+                d._children.forEach(c => collapseAndColor(c, parentColor));
+            } else {
+                d.color = d3.rgb(parentColor).brighter(d.depth * 0.5);
+            }
+        }
+
+        function showMessage(text) {
+            document.getElementById('message-text').innerText = text;
+            messageBox.style.display = 'flex';
+        }
+
+        function parseFreeMind(xmlString) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+            const rootNode = xmlDoc.querySelector('map > node');
+            if (!rootNode) throw new Error("Raíz del mapa mental no encontrada en el archivo FreeMind.");
+            return parseNode(rootNode);
+            function parseNode(nodeElement) {
+                const children = Array.from(nodeElement.querySelectorAll(':scope > node')).map(parseNode);
+                return { name: nodeElement.getAttribute('TEXT'), children: children.length > 0 ? children : null };
+            }
+        }
+
+        function parseOPML(xmlString) {
+            const parser = new DOMParser();
+            const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+            const rootNode = xmlDoc.querySelector('opml > body > outline');
+            if (!rootNode) throw new Error("Raíz del mapa mental no encontrada en el archivo OPML.");
+            return parseOutline(rootNode);
+            function parseOutline(outlineElement) {
+                const children = Array.from(outlineElement.querySelectorAll(':scope > outline')).map(parseOutline);
+                return { name: outlineElement.getAttribute('text'), children: children.length > 0 ? children : null };
+            }
+        }
+
+        function parseHTML(htmlString) {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(htmlString, "text/html");
+            const rootList = htmlDoc.querySelector('ul, ol');
+            if (!rootList) throw new Error("No se encontró una lista de nodos en el archivo HTML.");
+            function parseList(listElement) {
+                return Array.from(listElement.children).map(li => {
+                    const text = li.childNodes[0].nodeValue?.trim() || "Nodo sin texto";
+                    const childList = li.querySelector('ul, ol');
+                    return { name: text, children: childList ? parseList(childList) : null };
+                });
+            }
+            const children = parseList(rootList);
+            return { name: htmlDoc.title || "Mapa Mental", children: children };
+        }
+
+        // Función para envolver el texto en múltiples líneas
+        function wrapText(textSelection, maxWidth) {
+            const padding = 20;
+            const lineHeight = 1.2;
+            const fontSize = 14; 
+            
+            textSelection.each(function(d) {
+                const text = d3.select(this);
+                text.text(null).attr("text-anchor", "middle");
+
+                const words = d.data.name.split(/\s+/).reverse();
+                let word, line = [], lineCount = 0, tspan;
+
+                tspan = text.append("tspan").attr("x", 0).text("");
+
+                let maxLineWidth = 0;
+                while (word = words.pop()) {
+                    line.push(word);
+                    tspan.text(line.join(" "));
+                    
+                    const currentWidth = tspan.node().getComputedTextLength();
+                    maxLineWidth = Math.max(maxLineWidth, currentWidth);
+                    
+                    if (currentWidth > maxWidth - padding * 2) {
+                        line.pop();
+                        tspan.text(line.join(" "));
+                        maxLineWidth = Math.max(maxLineWidth, tspan.node().getComputedTextLength());
+                        line = [word];
+                        lineCount++;
+                        tspan = text.append("tspan").attr("x", 0).attr("dy", lineHeight + "em").text(word);
+                    }
+                }
+                
+                const totalLines = lineCount + 1;
+                const firstLineDy = -(totalLines - 1) / 2 * lineHeight + 0.35 + "em";
+                
+                text.selectAll("tspan").each(function(d, i) {
+                    if (i === 0) {
+                        d3.select(this).attr("dy", firstLineDy);
+                    } else {
+                        d3.select(this).attr("dy", lineHeight + "em");
+                    }
+                });
+                
+                const totalHeight = totalLines * lineHeight * fontSize + padding;
+                const totalWidth = Math.min(maxWidth, maxLineWidth + padding * 2);
+
+                d.data.height = totalHeight;
+                d.data.width = totalWidth;
+            });
+        }
+
+        // Función para actualizar la visualización del árbol
+        function update(source) {
+            // Performance optimization: dynamically set transition duration based on node count
+            const transitionDuration = root.descendants().length > NODE_LIMIT_FOR_TRANSITION ? 0 : 100;
+            const treeData = treeLayout(root);
+            const nodes = treeData.descendants();
+            const links = treeData.descendants().slice(1);
+
+            const node = g.selectAll('g.node').data(nodes, d => d.id);
+
+            const nodeEnter = node.enter().append('g')
+                .attr('class', 'node')
+                .attr("transform", d => `translate(${source.y0},${source.x0})`);
+
+            // Añadir manejador de clic para el nodo completo
+            nodeEnter.on('click', (event, d) => {
+                if (d.children || d._children) {
+                    event.stopPropagation();
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    } else {
+                        d.children = d._children;
+                        d._children = null;
+                    }
+                    update(d);
+                }
+            });
+
+            // Añadir rectángulo y texto para los nodos entrantes
+            nodeEnter.append('rect')
+                .attr('class', 'node-rect')
+                .attr('width', 1e-6)
+                .attr('height', 1e-6)
+                .style('fill', d => d._children ? d.color : (isDarkMode ? '#374151' : '#fff'))
+                .style('stroke', d => d.color);
+
+            nodeEnter.append('text')
+                .attr("class", "node-text")
+                .text(d => d.data.name);
+
+            // Añadir el grupo para el botón de expandir/colapsar
+            const buttonGroup = nodeEnter.append('g')
+                .attr('class', 'expand-collapse-button')
+                .on('click', (event, d) => { // Re-agregar el manejador de clic aquí
+                    if (d.children || d._children) {
+                        event.stopPropagation();
+                        if (d.children) {
+                            d._children = d.children;
+                            d.children = null;
+                        } else {
+                            d.children = d._children;
+                            d._children = null;
+                        }
+                        update(d);
+                    }
+                });
+
+            buttonGroup.append('circle')
+                .attr('r', 12)
+                .attr('cy', 0);
+
+            buttonGroup.append('text')
+                .attr('dy', '0.35em')
+                .attr('text-anchor', 'middle')
+                .style('font-size', '10px');
+
+            const nodeUpdate = nodeEnter.merge(node);
+            
+            // Envolver el texto para calcular las dimensiones del nodo
+            nodeUpdate.select('text.node-text').call(wrapText, 250);
+
+            nodeUpdate.transition().duration(transitionDuration)
+                .attr("transform", d => `translate(${d.y},${d.x})`);
+
+            // Aplicar las dimensiones calculadas al rectángulo
+            nodeUpdate.select('rect.node-rect')
+                .attr('x', d => -d.data.width / 2)
+                .attr('width', d => d.data.width)
+                .attr('height', d => d.data.height)
+                .attr('y', d => -d.data.height / 2)
+                .style("fill", d => d._children ? d.color : (isDarkMode ? '#374151' : '#fff'))
+                .style('stroke', d => d.color);
+
+            // Actualizar la posición y el contenido del botón
+            nodeUpdate.select('.expand-collapse-button')
+                .attr('transform', d => `translate(${d.data.width / 2 + 15}, 0)`)
+                .style('opacity', d => (d.children || d._children) ? 1 : 1e-6); 
+
+            nodeUpdate.select('.expand-collapse-button circle')
+                .style('stroke', d => d.color);
+            
+            // Lógica para mostrar el símbolo y el número de hijos
+            nodeUpdate.select('.expand-collapse-button text')
+                .text(d => d.children ? '<' : (d._children ? `>${d._children.length}` : ''));
+
+            const nodeExit = node.exit().transition().duration(transitionDuration)
+                .attr("transform", d => `translate(${source.y},${source.x})`)
+                .remove();
+            
+            nodeExit.select('rect').attr('width', 1e-6).attr('height', 1e-6);
+            nodeExit.select('text').style('fill-opacity', 1e-6);
+
+            // ******************* Enlaces *******************
+            const link = g.selectAll('path.link').data(links, d => d.id);
+
+            const linkEnter = link.enter().insert('path', 'g')
+                .attr('class', 'link')
+                .style('stroke', d => d.color)
+                .attr('d', d => {
+                    const o = { x: source.x0, y: source.y0 };
+                    return `M ${o.y} ${o.x} C ${o.y},${o.x},${o.y},${o.x},${o.y},${o.x}`;
+                });
+
+            link.merge(linkEnter).transition().duration(transitionDuration)
+                .attr('d', d => diagonal(d, d.parent))
+                .style('stroke', d => d.color);
+
+            link.exit().transition().duration(transitionDuration)
+                .attr('d', d => {
+                    const o = { x: source.y, y: source.x };
+                    return `M ${o.y} ${o.x} C ${o.y},${o.x},${o.y},${o.x},${o.y},${o.x}`;
+                })
+                .remove();
+
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+            
+            function diagonal(s, d) {
+                const parentConnectY = d.y + d.data.width / 2 + 10;
+                const childConnectY = s.y - s.data.width / 2;
+                return `M ${parentConnectY} ${d.x}
+                        C ${(parentConnectY + childConnectY) / 2} ${d.x},
+                          ${(parentConnectY + childConnectY) / 2} ${s.x},
+                          ${childConnectY} ${s.x}`;
+            }
+        }
+        
+        // Función para ajustar el árbol a la vista completa
+        function fitToTree() {
+            if (!root) return;
+
+            // Performance optimization for large trees
+            const transitionDuration = root.descendants().length > NODE_LIMIT_FOR_TRANSITION ? 0 : 300;
+
+            const fullWidth = window.innerWidth;
+            const fullHeight = window.innerHeight - 100;
+            const treeData = treeLayout(root);
+            const nodes = treeData.descendants();
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            
+            // Calcular los límites de todos los nodos visibles
+            nodes.forEach(d => {
+                minX = Math.min(minX, d.y - d.data.width / 2);
+                minY = Math.min(minY, d.x - d.data.height / 2);
+                maxX = Math.max(maxX, d.y + d.data.width / 2 + (d.children || d._children ? 20 : 0));
+                maxY = Math.max(maxY, d.x + d.data.height / 2);
+            });
+            
+            const dx = maxX - minX;
+            const dy = maxY - minY;
+            const scale = Math.max(0.2, Math.min(2, 0.9 / Math.max(dx / fullWidth, dy / fullHeight)));
+            
+            const translateX = fullWidth / 2 - (minX + dx / 2) * scale;
+            const translateY = fullHeight / 2 - (minY + dy / 2) * scale;
+            
+            const transform = d3.zoomIdentity.translate(translateX, translateY).scale(scale);
+
+            // Transicionar el SVG para aplicar el nuevo zoom y paneo
+            svg.transition().duration(transitionDuration)
+               .call(zoom.transform, transform);
+        }
+
+        // Función para colapsar todos los nodos (manteniendo el nodo raíz)
+        function collapseAll() {
+            if (!root) return;
+            root.descendants().forEach(d => {
+                if (d.depth > 0) { // No colapsar el nodo raíz
+                    if (d.children) {
+                        d._children = d.children;
+                        d.children = null;
+                    }
+                }
+            });
+            update(root);
+        }
+
+        // Función para expandir el siguiente nivel de todas las ramas visibles
+        function expandNextLevel() {
+            if (!root) return;
+            
+            const nodesToExpand = root.descendants().filter(d => d._children && !d.children);
+            
+            nodesToExpand.forEach(d => {
+                d.children = d._children;
+                d._children = null;
+            });
+            
+            update(root);
+            
+            fitToTree();
+        }
+
+        // *** Funciones de Exportación ***
+        function downloadFile(content, fileName, mimeType) {
+            const blob = new Blob([content], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+        function getFullTree(node) {
+            const newNode = { name: node.data.name, id: node.data.id };
+            const allChildren = [];
+
+            if (node.children) {
+                node.children.forEach(child => {
+                    allChildren.push(getFullTree(child));
+                });
+            }
+            if (node._children) {
+                node._children.forEach(child => {
+                    allChildren.push(getFullTree(child));
+                });
+            }
+
+            if (allChildren.length > 0) {
+                newNode.children = allChildren;
+            }
+
+            return newNode;
+        }
+
+        function exportAsSVG(event) {
+            event.preventDefault();
+            const svgElement = document.getElementById('mindmap-svg');
+            const svgData = new XMLSerializer().serializeToString(svgElement);
+            const fileName = (root && root.data.name ? root.data.name : 'mapa_mental') + '.svg';
+            
+            const style = getComputedStyle(document.body);
+            const cssText = `
+                .node-rect { fill: ${style.getPropertyValue('--tw-bg-gray-100')}; stroke: ${style.getPropertyValue('--tw-bg-gray-100')}; rx: 8px; ry: 8px; }
+                body.dark .node-rect { fill: ${style.getPropertyValue('--tw-bg-gray-800')}; stroke: ${style.getPropertyValue('--tw-bg-gray-800')}; }
+                .node-text { font-size: 14px; font-weight: 500; fill: ${style.getPropertyValue('--tw-bg-gray-800')}; }
+                body.dark .node-text { fill: ${style.getPropertyValue('--tw-bg-gray-100')}; }
+                .link { fill: none; stroke: ${style.getPropertyValue('--tw-bg-gray-800')}; stroke-width: 2px; }
+                body.dark .link { stroke: ${style.getPropertyValue('--tw-bg-gray-100')}; }
+            `;
+            const svgWithStyles = svgData.replace('<svg', `<svg xmlns="http://www.w3.org/2000/svg" style="background-color: ${style.getPropertyValue('--tw-bg-gray-100')};"><style>${cssText}</style>`);
+            
+            downloadFile(svgWithStyles, fileName, 'image/svg+xml');
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsPNG(event) {
+            event.preventDefault();
+            const svgElement = document.getElementById('mindmap-svg');
+            htmlToImage.toPng(svgElement)
+                .then(function (dataUrl) {
+                    const link = document.createElement('a');
+                    link.download = (root && root.data.name ? root.data.name : 'mapa_mental') + '.png';
+                    link.href = dataUrl;
+                    link.click();
+                });
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsJSON(event) {
+            event.preventDefault();
+            if (!root) return;
+            
+            const fullTreeData = getFullTree(root);
+            const jsonData = JSON.stringify(fullTreeData, null, 2);
+            const fileName = (root.data.name || 'mapa_mental') + '.json';
+            downloadFile(jsonData, fileName, 'application/json');
+            
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsFreeMind(event) {
+            event.preventDefault();
+            if (!root) return;
+
+            function buildFreeMindXml(nodeData) {
+                let xml = `<node TEXT="${nodeData.name}"`;
+                const children = nodeData.children;
+                if (children && children.length > 0) {
+                    xml += '>';
+                    children.forEach(child => {
+                        xml += buildFreeMindXml(child);
+                    });
+                    xml += '</node>';
+                } else {
+                    xml += '/>';
+                }
+                return xml;
+            }
+
+            const fullTreeData = getFullTree(root);
+            const xml = `<?xml version="1.0" encoding="UTF-8"?><map version="1.0.1">${buildFreeMindXml(fullTreeData)}</map>`;
+            const fileName = (root.data.name || 'mapa_mental') + '.mm';
+            downloadFile(xml, fileName, 'text/xml');
+            
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        function exportAsOPML(event) {
+            event.preventDefault();
+            if (!root) return;
+
+            function buildOPML(nodeData) {
+                let xml = `<outline text="${nodeData.name}"`;
+                const children = nodeData.children;
+                if (children && children.length > 0) {
+                    xml += '>';
+                    children.forEach(child => {
+                        xml += buildOPML(child);
+                    });
+                    xml += '</outline>';
+                } else {
+                    xml += '/>';
+                }
+                return xml;
+            }
+
+            const fullTreeData = getFullTree(root);
+            const xml = `<?xml version="1.0"?><opml version="2.0"><body>${buildOPML(fullTreeData)}</body></opml>`;
+            const fileName = (root.data.name || 'mapa_mental') + '.opml';
+            downloadFile(xml, fileName, 'text/xml');
+
+            document.getElementById('save-dropdown-menu').classList.add('hidden');
+        }
+
+        // Datos del mapa mental incrustados
+        const embeddedMindMapData = `<?xml version="1.0" encoding="UTF-8"?>
+<map version="1.0.1">
+<!-- Generated by NotebookLM Corrected Mindmap Extractor v6.0 with X-Level Parent-Child Logic -->
+  <node ID="node_0" TEXT="Tecnología MasaRoca">
+    <node ID="node_1" TEXT="¿Qué es MasaRoca?">
+      <node ID="node_9" TEXT="Microconcreto tipo grouts cementicios">
+        <node ID="node_44" TEXT="Al añadir agua, forma masa tipo barro">
+        </node>
+        <node ID="node_45" TEXT="Elimina uso de cimbras">
+        </node>
+        <node ID="node_46" TEXT="Máxima adherencia a sustratos">
+        </node>
+        <node ID="node_47" TEXT="Permite construir sin cimbra">
+        </node>
+        <node ID="node_48" TEXT="Resistente al fuego">
+        </node>
+        <node ID="node_49" TEXT="No se intemperiza">
+        </node>
+      </node>
+      <node ID="node_10" TEXT="Supermateriales">
+        <node ID="node_50" TEXT="Reconocidos científicamente por resistencias y estructuración">
+        </node>
+      </node>
+      <node ID="node_11" TEXT="Patentada internacionalmente">
+      </node>
+      <node ID="node_12" TEXT="Un solo producto: Construir, Reparar, Impermeabilizar">
+      </node>
+      <node ID="node_13" TEXT="Tecnología innovadora">
+        <node ID="node_51" TEXT="Revoluciona el uso de cementos">
+        </node>
+        <node ID="node_52" TEXT="Solución a problemas de la construcción">
+        </node>
+      </node>
+    </node>
+    <node ID="node_2" TEXT="Propiedades Físicas y Mecánicas">
+      <node ID="node_14" TEXT="Densidad">
+        <node ID="node_53" TEXT="1.2 a 1.5 g/cm³">
+        </node>
+      </node>
+      <node ID="node_15" TEXT="Resistencia a la compresión">
+        <node ID="node_54" TEXT="Desde 28 MPa (4,000 psi) hasta 128 MPa (18,500 psi)">
+        </node>
+      </node>
+      <node ID="node_16" TEXT="Resistencia a la flexión">
+        <node ID="node_55" TEXT="4 a 10 MPa">
+        </node>
+      </node>
+      <node ID="node_17" TEXT="Adherencia a sustratos">
+        <node ID="node_56" TEXT="Concreto, roca, metal, madera, etc.">
+        </node>
+        <node ID="node_57" TEXT="Supera los 2 MPa">
+        </node>
+      </node>
+      <node ID="node_18" TEXT="Contracción">
+        <node ID="node_58" TEXT="Cero o expansión controlada">
+        </node>
+      </node>
+      <node ID="node_19" TEXT="Expansión controlada">
+        <node ID="node_59" TEXT="Hasta 0.25% en 24 horas">
+        </node>
+      </node>
+      <node ID="node_20" TEXT="Permeabilidad">
+        <node ID="node_60" TEXT="Prácticamente nula">
+        </node>
+      </node>
+      <node ID="node_21" TEXT="Resistencia al fuego">
+        <node ID="node_61" TEXT="Incombustible">
+        </node>
+      </node>
+      <node ID="node_22" TEXT="Resistencia a la abrasión">
+        <node ID="node_62" TEXT="Superior al concreto de alta resistencia">
+        </node>
+      </node>
+      <node ID="node_23" TEXT="Durabilidad">
+        <node ID="node_63" TEXT="Supera 100 años en condiciones severas">
+        </node>
+      </node>
+      <node ID="node_24" TEXT="Estabilidad">
+        <node ID="node_64" TEXT="No se intemperiza">
+        </node>
+      </node>
+    </node>
+    <node ID="node_3" TEXT="Versatilidad de Uso">
+      <node ID="node_25" TEXT="Construcción">
+        <node ID="node_65" TEXT="Muros, losas, columnas, etc.">
+        </node>
+        <node ID="node_66" TEXT="Permite construcción vertical sin cimbra">
+        </node>
+      </node>
+      <node ID="node_26" TEXT="Reparación y Restauración">
+        <node ID="node_67" TEXT="Rellenos, parches, sellado de grietas">
+        </node>
+        <node ID="node_68" TEXT="Restauración de estructuras históricas">
+        </node>
+      </node>
+      <node ID="node_27" TEXT="Impermeabilización">
+        <node ID="node_69" TEXT="Superficies de concreto, mampostería, etc.">
+        </node>
+        <node ID="node_70" TEXT="Elimina filtraciones y humedad">
+        </node>
+      </node>
+      <node ID="node_28" TEXT="Concreto Lanzado (Shotcrete)">
+        <node ID="node_71" TEXT="Aplicación manual o con equipo especializado">
+        </node>
+        <node ID="node_72" TEXT="No rebote">
+        </node>
+        <node ID="node_73" TEXT="Mínima pérdida de material">
+        </node>
+      </node>
+      <node ID="node_29" TEXT="Grouting">
+        <node ID="node_74" TEXT="Inyección en grietas y cavidades">
+        </node>
+        <node ID="node_75" TEXT="Rellenos de cavidades en estructuras">
+        </node>
+      </node>
+      <node ID="node_30" TEXT="Protección Catódica">
+        <node ID="node_76" TEXT="Protección de armaduras de acero">
+        </node>
+      </node>
+      <node ID="node_31" TEXT="Protección de Superficies">
+        <node ID="node_77" TEXT="Recubrimientos de tanques, tuberías, etc.">
+        </node>
+      </node>
+    </node>
+    <node ID="node_4" TEXT="Beneficios y Ventajas">
+      <node ID="node_32" TEXT="Versatilidad">
+        <node ID="node_78" TEXT="Un solo producto para varias aplicaciones">
+        </node>
+        <node ID="node_79" TEXT="Reduce costos y logística">
+        </node>
+      </node>
+      <node ID="node_33" TEXT="Sustentabilidad">
+        <node ID="node_80" TEXT="No tóxico">
+        </node>
+        <node ID="node_81" TEXT="Reciclable">
+        </node>
+        <node ID="node_82" TEXT="Baja huella de carbono">
+        </node>
+      </node>
+      <node ID="node_34" TEXT="Rendimiento">
+        <node ID="node_83" TEXT="Bajo costo por m²">
+        </node>
+        <node ID="node_84" TEXT="Menor desperdicio de material">
+        </node>
+      </node>
+      <node ID="node_35" TEXT="Rapidez de aplicación">
+        <node ID="node_85" TEXT="Reduce tiempo de obra">
+        </node>
+        <node ID="node_86" TEXT="Permite construcción acelerada">
+        </node>
+      </node>
+      <node ID="node_36" TEXT="Durabilidad">
+        <node ID="node_87" TEXT="Mayor vida útil de las estructuras">
+        </node>
+        <node ID="node_88" TEXT="Resistente a la intemperie y a la abrasión">
+        </node>
+      </node>
+    </node>
+    <node ID="node_5" TEXT="Composición y Características">
+      <node ID="node_37" TEXT="Composición">
+        <node ID="node_89" TEXT="Cementos de alta alúmina">
+        </node>
+        <node ID="node_90" TEXT="Fibras minerales">
+        </node>
+        <node ID="node_91" TEXT="Aditivos químicos">
+        </node>
+        <node ID="node_92" TEXT="Polímeros">
+        </node>
+      </node>
+      <node ID="node_38" TEXT="Color">
+        <node ID="node_93" TEXT="Gris claro">
+        </node>
+      </node>
+      <node ID="node_39" TEXT="Presentación">
+        <node ID="node_94" TEXT="Saco de 25 kg">
+        </node>
+      </node>
+      <node ID="node_40" TEXT="Dosificación">
+        <node ID="node_95" TEXT="25 kg de MasaRoca por 5-6 litros de agua">
+        </node>
+      </node>
+      <node ID="node_41" TEXT="Propiedades Físicas">
+        <node ID="node_96" TEXT="Viscosidad">
+        </node>
+        <node ID="node_97" TEXT="Consistencia">
+        </node>
+        <node ID="node_98" TEXT="Tixotropía">
+        </node>
+        <node ID="node_99" TEXT="Rigidez">
+        </node>
+      </node>
+      <node ID="node_42" TEXT="Resistencia a Químicos">
+        <node ID="node_275" TEXT="Ácido Clorhídrico">
+        </node>
+        <node ID="node_276" TEXT="Ácido Acético">
+        </node>
+        <node ID="node_277" TEXT="Cloruro de Calcio">
+        </node>
+        <node ID="node_278" TEXT="Sulfato de Sodio">
+        </node>
+        <node ID="node_279" TEXT="Hidróxido de Sodio">
+        </node>
+        <node ID="node_280" TEXT="Carbonato de Sodio">
+        </node>
+        <node ID="node_281" TEXT="Sacarosa">
+        </node>
+        <node ID="node_282" TEXT="Gasolina">
+        </node>
+        <node ID="node_283" TEXT="Aceite">
+        </node>
+        <node ID="node_284" TEXT="Agua de Mar">
+        </node>
+        <node ID="node_285" TEXT="Agua Negra">
+        </node>
+        <node ID="node_286" TEXT="Lixiviado">
+        </node>
+      </node>
+      <node ID="node_43" TEXT="Certificado de Potabilidad">
+        <node ID="node_287" TEXT="Análisis de material MasaRoca para contacto con agua potable">
+        </node>
+      </node>
+    </node>
+    <node ID="node_6" TEXT="Aplicaciones Específicas">
+      <node ID="node_100" TEXT="Impermeabilización">
+        <node ID="node_101" TEXT="Estanques, albercas, cisternas, túneles">
+        </node>
+      </node>
+      <node ID="node_102" TEXT="Reparación">
+        <node ID="node_103" TEXT="Aparatos sanitarios, muebles de concreto, etc.">
+        </node>
+      </node>
+      <node ID="node_104" TEXT="Recubrimientos">
+        <node ID="node_105" TEXT="Cables de acero, tanques, estructuras de concreto">
+        </node>
+      </node>
+      <node ID="node_106" TEXT="Grouting">
+        <node ID="node_107" TEXT="Relleno de muros, grietas, cavidades">
+        </node>
+      </node>
+      <node ID="node_108" TEXT="Anclaje">
+        <node ID="node_109" TEXT="Maquinaria, estructuras de acero, tornillos">
+        </node>
+      </node>
+      <node ID="node_110" TEXT="Concreto lanzado">
+        <node ID="node_111" TEXT="Canales, taludes, túneles, minería">
+        </node>
+      </node>
+      <node ID="node_112" TEXT="Construcción">
+        <node ID="node_113" TEXT="Losas, muros, cimientos, columnas">
+        </node>
+      </node>
+    </node>
+    <node ID="node_7" TEXT="Gama de Productos">
+      <node ID="node_114" TEXT="MasaRoca Industrial">
+        <node ID="node_115" TEXT="Uso general">
+        </node>
+      </node>
+      <node ID="node_116" TEXT="MasaRoca Resina">
+        <node ID="node_117" TEXT="Mayor adherencia">
+        </node>
+      </node>
+      <node ID="node_118" TEXT="MasaRoca Grout">
+        <node ID="node_119" TEXT="Inyecciones de grietas">
+        </node>
+      </node>
+      <node ID="node_120" TEXT="MasaRoca Shotcrete">
+        <node ID="node_121" TEXT="Concreto lanzado">
+        </node>
+      </node>
+      <node ID="node_122" TEXT="MasaRoca Pavimentos">
+        <node ID="node_123" TEXT="Carreteras, pistas de aterrizaje">
+        </node>
+      </node>
+      <node ID="node_124" TEXT="MasaRoca Potabilizador">
+        <node ID="node_125" TEXT="Contacto con agua potable">
+        </node>
+      </node>
+    </node>
+    <node ID="node_8" TEXT="Certificaciones y Normas">
+      <node ID="node_126" TEXT="Análisis de laboratorio">
+        <node ID="node_127" TEXT="Resistencia a la compresión">
+        </node>
+        <node ID="node_128" TEXT="Resistencia a la flexión">
+        </node>
+        <node ID="node_129" TEXT="Adherencia">
+        </node>
+      </node>
+      <node ID="node_130" TEXT="Normas Internacionales">
+        <node ID="node_131" TEXT="ASTM">
+        </node>
+        <node ID="node_132" TEXT="ANSI">
+        </node>
+        <node ID="node_133" TEXT="ISO">
+        </node>
+      </node>
+      <node ID="node_134" TEXT="Certificados de Calidad">
+        <node ID="node_135" TEXT="ISO 9001">
+        </node>
+        <node ID="node_136" TEXT="ASTM C1107">
+        </node>
+        <node ID="node_137" TEXT="ASTM C1437">
+        </node>
+      </node>
+    </node>
+  </node>
+</map>
+`;
+        
+        window.onload = async () => {
+            initializeD3();
+            updateLanguage('es');
+
+            document.getElementById('save-dropdown-button').addEventListener('click', () => {
+                const menu = document.getElementById('save-dropdown-menu');
+                menu.classList.toggle('hidden');
+            });
+            document.getElementById('save-svg').addEventListener('click', exportAsSVG);
+            document.getElementById('save-png').addEventListener('click', exportAsPNG);
+            document.getElementById('save-json').addEventListener('click', exportAsJSON);
+            document.getElementById('save-mm').addEventListener('click', exportAsFreeMind);
+            document.getElementById('save-opml').addEventListener('click', exportAsOPML);
+
+            // Cargar automáticamente el mapa mental incrustado
+            if (embeddedMindMapData) {
+                document.getElementById('loading-spinner').classList.remove('hidden');
+                messageBox.style.display = 'none';
+
+                try {
+                    const data = parseFreeMind(embeddedMindMapData);
+                    if (data) {
+                        const assignIds = (node, parentId = null) => {
+                            node.id = `${parentId ? parentId + '_' : ''}${crypto.randomUUID()}`;
+                            if (node.children) {
+                                node.children.forEach(child => assignIds(child, node.id));
+                            }
+                        };
+                        assignIds(data);
+                        
+                        root = d3.hierarchy(data, d => d.children);
+                        root.x0 = window.innerHeight / 2;
+                        root.y0 = 0;
+
+                        if (root.children) {
+                            root.children.forEach((child, index) => {
+                                collapseAndColor(child, branchColors[index % branchColors.length]);
+                            });
+                        }
+                        
+                        update(root);
+                        fitToTree();
+                    }
+                } catch (error) {
+                    console.error("Error al cargar el mapa mental incrustado:", error);
+                    showMessage(translations['error-parsing-file'][currentLanguage]);
+                } finally {
+                    document.getElementById('loading-spinner').classList.add('hidden');
+                }
+            }
+        };
+        window.onresize = () => { if (root) update(root); };
+    </script>
+</body>
+</html>
